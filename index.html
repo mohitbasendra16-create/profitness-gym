@@ -44,17 +44,19 @@ nav button.on{color:var(--red)}
 <body>
 <div id="bg"><svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b1b20"/><stop offset="1" stop-color="#070708"/></linearGradient><radialGradient id="l" cx=".5" cy=".3" r=".6"><stop offset="0" stop-color="#e5352b" stop-opacity=".35"/><stop offset="1" stop-color="#e5352b" stop-opacity="0"/></radialGradient></defs><rect width="400" height="800" fill="url(#g)"/><rect width="400" height="800" fill="url(#l)"/><g fill="#34343b"><rect x="-20" y="470" width="440" height="14" rx="3"/><rect x="40" y="330" width="26" height="304" rx="6"/><rect x="72" y="360" width="22" height="244" rx="5"/><rect x="334" y="330" width="26" height="304" rx="6"/><rect x="306" y="360" width="22" height="244" rx="5"/></g><g fill="#26262c"><rect x="0" y="640" width="400" height="160"/><rect x="-10" y="150" width="14" height="500"/><rect x="396" y="150" width="14" height="500"/><rect x="-10" y="150" width="140" height="10"/><rect x="270" y="150" width="140" height="10"/></g><g fill="#3b3b43"><circle cx="90" cy="740" r="46"/><circle cx="90" cy="740" r="12" fill="#0b0b0d"/><circle cx="300" cy="750" r="36"/><circle cx="300" cy="750" r="10" fill="#0b0b0d"/></g></svg></div>
 <div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script type="module">
 import {initializeApp,getApps} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {getFirestore,doc,setDoc,deleteDoc,collection,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getFirestore,doc,setDoc,getDoc,deleteDoc,collection,onSnapshot,arrayUnion} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 const cfg={apiKey:"AIzaSyDXfjJ1EX8Nt_Z_3aNLep99T5P5hDowr2Q",authDomain:"pro-fitness-gym-82ee6.firebaseapp.com",projectId:"pro-fitness-gym-82ee6",storageBucket:"pro-fitness-gym-82ee6.firebasestorage.app",messagingSenderId:"445361203690",appId:"1:445361203690:web:a4652e9c7cb6173f2cea93"};
 const app=initializeApp(cfg),auth=getAuth(app),fs=getFirestore(app);
 // IMPORTANT: change OWNER to the real owner mobile number (also in firestore.rules)
 const OWNER='8690518789',EM='@profitness.app';
-let db={members:[],data:{},lb:{}},sess=null,tab='home',err='',merr='',lastMob='',lift='Bench Press',cat='All',viewM=null,ready=false,unsubs=[];
+let db={members:[],data:{},lb:{}},sess=null,tab='home',err='',merr='',lastMob='',lift='Bench Press',cat='All',viewM=null,ready=false,unsubs=[],toast='',pend=new URLSearchParams(location.search).get('checkin');
 const LIFTS=['Bench Press','Squat','Deadlift','Overhead Press'];
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 function feeInfo(m){const f=D(m).fees;let best=null;f.forEach(x=>{const e=new Date(x.date+'T00:00:00Z').getTime()+x.days*864e5;if(!best||e>best.e)best={e,x}});if(!best)return{paid:false,left:0,last:null};const t=new Date(today()+'T00:00:00Z').getTime(),left=Math.round((best.e-t)/864e5);return{paid:left>0,left,last:best.x}}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -82,6 +84,7 @@ onAuthStateChanged(auth,u=>{
   const mobile=u.email.split('@')[0];
   sess={mobile,admin:mobile===OWNER,name:mobile===OWNER?'Gym Owner':mobile};
   tab='home';viewM=null;listen();render();
+  if(pend){const c=pend;pend=null;history.replaceState(null,'',location.pathname);checkin(c)}
 });
 async function login(){
   const m=$('#mob').value.trim(),p=$('#pw').value;lastMob=m;
@@ -110,7 +113,7 @@ function screen(){
     const n=new Date(),y=n.getFullYear(),m=n.getMonth(),first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
     let c=['S','M','T','W','T','F','S'].map(x=>'<div class="h">'+x+'</div>').join('')+'<div style="background:none"></div>'.repeat(first);
     for(let i=1;i<=days;i++){const ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(i).padStart(2,'0');c+='<div class="'+(d.att.includes(ds)?'p':'')+(ds===today()?' t':'')+'">'+i+'</div>'}
-    return LOGOTXT+'<h2>Welcome, '+esc(sess.name.split(' ')[0])+'</h2><div class="row"><div class="card stat"><b>'+mon+'</b><span>Days this month</span></div><div class="card stat"><b>'+lw+'</b><span>Weight (kg)</span></div></div><button id="chk" '+(done?'class="sec"':'')+'>'+(done?'CHECKED IN TODAY':'CHECK IN')+'</button><div class="card"><b>Attendance</b><p class="mut" style="margin:4px 0 12px">'+n.toLocaleString('en-IN',{month:'long',year:'numeric'})+'</p><div class="cal">'+c+'</div></div>';
+    return LOGOTXT+'<h2>Welcome, '+esc(sess.name.split(' ')[0])+'</h2><div class="row"><div class="card stat"><b>'+mon+'</b><span>Days this month</span></div><div class="card stat"><b>'+lw+'</b><span>Weight (kg)</span></div></div>'+(toast?'<div class="card" style="border-color:var(--grn)">'+esc(toast)+'</div>':'')+'<button id="chk" '+(done?'class="sec"':'')+'>'+(done?'CHECKED IN TODAY':'SCAN QR TO CHECK IN')+'</button><div class="card"><b>Attendance</b><p class="mut" style="margin:4px 0 12px">'+n.toLocaleString('en-IN',{month:'long',year:'numeric'})+'</p><div class="cal">'+c+'</div></div>';
   }
   if(tab==='wo'){
     const best={};d.wo.forEach(w=>{if(!best[w.ex]||w.kg*w.reps>best[w.ex].kg*best[w.ex].reps)best[w.ex]=w});
@@ -145,7 +148,7 @@ function screen(){
   }
   let h='<h2>Profile</h2><div class="card"><b>'+esc(sess.name)+'</b><p class="mut">'+esc(sess.mobile)+(sess.admin?' · Owner':' · Member')+'</p></div>';
   if(sess.admin){
-    h+='<div class="card" style="display:flex;flex-direction:column;gap:10px"><b>Add member</b><input id="nn" placeholder="Name"><input id="nm" type="tel" inputmode="numeric" placeholder="Mobile number"><input id="np" placeholder="Password (min 6)"><div class="err">'+esc(merr)+'</div><button id="addm">ADD MEMBER</button></div><div class="card"><b>Members (tap a name) ('+db.members.length+')</b>'+(db.members.map(x=>'<div class="li"><span data-v="'+esc(x.mobile)+'" style="cursor:pointer;flex:1"><span class="dot '+(feeInfo(x.mobile).paid?'ok':'due')+'"></span><b>'+esc(x.name)+'</b><br><span class="mut">'+esc(x.mobile)+' · '+(feeInfo(x.mobile).paid?'Paid':'Due')+'</span></span><button class="sm sec" data-del="'+esc(x.mobile)+'">Remove</button></div>').join('')||'<p class="mut">No members yet</p>')+'</div>';
+    h+='<div class="card"><b>Gym QR</b><p class="mut" style="margin:6px 0 12px">Print this QR and stick it at the gym entrance.</p><button id="showqr">SHOW CHECK-IN QR</button></div><div class="card" style="display:flex;flex-direction:column;gap:10px"><b>Add member</b><input id="nn" placeholder="Name"><input id="nm" type="tel" inputmode="numeric" placeholder="Mobile number"><input id="np" placeholder="Password (min 6)"><div class="err">'+esc(merr)+'</div><button id="addm">ADD MEMBER</button></div><div class="card"><b>Members (tap a name) ('+db.members.length+')</b>'+(db.members.map(x=>'<div class="li"><span data-v="'+esc(x.mobile)+'" style="cursor:pointer;flex:1"><span class="dot '+(feeInfo(x.mobile).paid?'ok':'due')+'"></span><b>'+esc(x.name)+'</b><br><span class="mut">'+esc(x.mobile)+' · '+(feeInfo(x.mobile).paid?'Paid':'Due')+'</span></span><button class="sm sec" data-del="'+esc(x.mobile)+'">Remove</button></div>').join('')||'<p class="mut">No members yet</p>')+'</div>';
   }
   return h+'<button id="out" class="sec">LOGOUT</button>';
 }
@@ -171,9 +174,48 @@ async function removeMember(mob){
   if(!confirm('Remove this member and all data?'))return;
   try{await Promise.all(['members','fees','lb'].map(c=>deleteDoc(doc(fs,c,mob))));delete db.data[mob]}catch(e){console.error(e)}
 }
+const sha=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+const parseCode=t=>{try{const c=new URL(t).searchParams.get('checkin');if(c)return c}catch(e){}return t.startsWith('PFG:')?t.slice(4):null};
+async function checkin(code){
+  try{
+    const s=await getDoc(doc(fs,'config','gym'));
+    if(!s.exists()){toast='QR is not set up yet. Ask the gym owner.';return render()}
+    if(await sha(code)!==s.data().hash){toast='Invalid QR code';return render()}
+    const t=today(),d=D(sess.mobile);
+    if(!d.att.includes(t))d.att.push(t);
+    await setDoc(doc(fs,'members',sess.mobile),{att:arrayUnion(t)},{merge:true});
+    toast='Attendance marked for today';
+  }catch(e){console.error(e);toast='Could not mark attendance. Try again.'}
+  render();
+}
+let stream=null,scanning=false;
+function closeOv(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}const o=$('#ov');if(o)o.remove()}
+function overlay(html){closeOv();const o=document.createElement('div');o.id='ov';o.style.cssText='position:fixed;inset:0;z-index:10;background:#0b0b0d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center';o.innerHTML=html;document.body.appendChild(o);const c=o.querySelector('#ovc');if(c)c.onclick=closeOv;return o}
+async function openScanner(){
+  overlay('<b style="font-size:20px">Scan gym QR code</b><video id="vid" playsinline muted style="width:100%;max-width:360px;border-radius:16px;border:2px solid var(--red)"></video><p class="mut" id="sm">Point your camera at the QR code</p><button id="ovc" class="sec" style="max-width:360px">CANCEL</button>');
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const v=$('#vid');v.srcObject=stream;await v.play();scanning=true;
+    const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
+    const tick=()=>{
+      if(!scanning)return;
+      if(v.videoWidth){const w=480,h=Math.round(v.videoHeight/v.videoWidth*w);cv.width=w;cv.height=h;cx.drawImage(v,0,0,w,h);const r=jsQR(cx.getImageData(0,0,w,h).data,w,h);
+        if(r&&r.data){const c=parseCode(r.data);closeOv();if(c)checkin(c);else{toast='Invalid QR code';render()}return}}
+      requestAnimationFrame(tick)};
+    tick();
+  }catch(e){const sm=$('#sm');if(sm)sm.textContent='Camera access is needed. Allow camera permission and try again.'}
+}
+async function newCode(){const a=crypto.getRandomValues(new Uint8Array(12)),code=[...a].map(b=>(b%36).toString(36)).join('');await setDoc(doc(fs,'secret','gym'),{code});await setDoc(doc(fs,'config','gym'),{hash:await sha(code)});return code}
+function drawQR(code){
+  const q=qrcode(0,'M');q.addData(location.origin+location.pathname+'?checkin='+code);q.make();
+  overlay('<b style="font-size:20px">Pro Fitness Gym · Check-in QR</b><div style="background:#fff;padding:12px;border-radius:16px;width:100%;max-width:340px"><img src="'+q.createDataURL(8,2)+'" style="width:100%;image-rendering:pixelated;display:block"></div><p class="mut">Take a screenshot and print it. Stick it at the gym entrance.</p><button id="newq" class="sec" style="max-width:340px">GENERATE NEW QR</button><button id="ovc" style="max-width:340px">CLOSE</button>');
+  $('#newq').onclick=async()=>{if(!confirm('The old printed QR will stop working. Continue?'))return;try{drawQR(await newCode())}catch(e){alert('Could not create QR')}};
+}
+async function showQR(){try{const s=await getDoc(doc(fs,'secret','gym'));drawQR(s.exists()?s.data().code:await newCode())}catch(e){console.error(e);alert('Could not open QR. Check Firestore rules.')}}
 function bind(){
   const d=D(sess.mobile),on=(id,f)=>{const e=$(id);if(e)e.onclick=f},sv=()=>{saveM(sess.mobile);render()};
-  on('#chk',()=>{if(!d.att.includes(today()))d.att.push(today());sv()});
+  on('#chk',()=>{toast='';if(d.att.includes(today())){toast='Already checked in today';render()}else openScanner()});
+  on('#showqr',showQR);
   on('#addwo',()=>{const ex=$('#ex').value.trim(),kg=+$('#kg').value,rp=+$('#rp').value;if(!ex||!kg||!rp)return;d.wo.push({date:today(),ex,kg,reps:rp});sv()});
   on('#addpr',()=>{const k=+$('#prk').value,w=+$('#prb').value;if(!k||!w)return;d.pr[lift]={kg:k,bw:w};saveLb(sess.mobile);render()});
   on('#addbw',()=>{const k=+$('#bw').value;if(!k)return;d.wt.push({date:today(),kg:k});sv()});
